@@ -104,9 +104,6 @@ static int encryption_decryption(u8 *data, size_t datasize, char* key, size_t ke
         goto out;
     }
 
-    // if(mode == ENC) pr_info("Encryption was successful\n");
-    // else if(mode == DEC) pr_info("Decryption was successful\n");
-
 out:
     crypto_free_skcipher(tfm);
     skcipher_request_free(req);
@@ -145,8 +142,6 @@ static ssize_t cryptomod_dev_write(struct file *f, const char __user *user_buf, 
     }
 
     if(len == 0) return 0;
-
-    // pr_info("cryptomod: Writing %ld data to device.\n", len);
 
     if(state->io_mode == BASIC) {
         int err = copy_from_user(state->buf + state->buf_len, user_buf, len);
@@ -207,8 +202,6 @@ static ssize_t cryptomod_dev_write(struct file *f, const char __user *user_buf, 
 
 static ssize_t cryptomod_dev_read(struct file *f, char __user *user_buf, size_t len, loff_t *off) {
     struct cryptodev_state *state = f->private_data;
-
-    // pr_info("cryptomod: Reading %ld data from device.\n", len);
 
     /*** Check if the device is not properly setup ***/
     if(!state->is_setup) {

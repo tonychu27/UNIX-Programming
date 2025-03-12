@@ -5,7 +5,7 @@
 #include <fcntl.h>
 #include <sys/ioctl.h>
 
-#define	DEVFILE	"/dev/hello_dev"
+#define	DEVFILE	"/dev/cryptodev"
 
 int main() {
 	int fd;
