@@ -202,17 +202,14 @@ static ssize_t cryptomod_dev_read(struct file *f, char __user *user_buf, size_t 
         return 0;
     }
 
-    if(*off >= state->buf_len) {
-        memset(state->buf, 0, CM_BUF_SIZE);
-        state->buf_len = 0;
-        *off = 0;
-        return 0;
-    }
+
     if(state->io_mode == BASIC) {
+        if(*off >= state->buf_len) return 0;
+        
         size_t available = state->buf_len - *off;
         size_t to_copy = len > available ? available : len;
 
-        int err = copy_to_user(user_buf + *off, state->buf + *off, to_copy);
+        int err = copy_to_user(user_buf, state->buf + *off, to_copy);
         if(err) {
             pr_err("Failed to copy data to user space.\n");
             return -EBUSY;
@@ -226,6 +223,14 @@ static ssize_t cryptomod_dev_read(struct file *f, char __user *user_buf, size_t 
         return to_copy;
     }
     else if(state->io_mode == ADV) {
+        
+        if(*off >= state->buf_len) {
+            memset(state->buf, 0, CM_BUF_SIZE);
+            state->buf_len = 0;
+            *off = 0;
+            return 0;
+        }
+
         size_t available = state->buf_len - *off;
         size_t to_copy = len > available ? available : len;
         pr_info("Can only reading %ld data from device.\n", to_copy);
