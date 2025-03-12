@@ -178,7 +178,9 @@ static ssize_t cryptomod_dev_write(struct file *f, const char __user *user_buf, 
 
             }
 
+            mutex_lock(&lock);
             total_bytes_written += blocks * CM_BLOCK_SIZE;
+            mutex_unlock(&lock);
 
             return blocks * CM_BLOCK_SIZE;
         }
@@ -191,7 +193,9 @@ static ssize_t cryptomod_dev_write(struct file *f, const char __user *user_buf, 
 
             state->buf_len += len;
 
+            mutex_lock(&lock);
             total_bytes_written += len;
+            mutex_unlock(&lock);
 
             return len;
         }
