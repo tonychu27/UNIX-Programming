@@ -17,6 +17,8 @@
 
 struct cryptodev_state {
     bool is_finalized;
+    bool is_setup;
+
     enum CryptoMode crypto_mode;
     enum IOMode io_mode;
     int key_length;
@@ -116,6 +118,7 @@ static int cryptomod_dev_open(struct inode *i, struct file *f) {
     if (state == NULL) return -ENOMEM;
 
     state->is_finalized = false;
+    state->is_setup = false;
     state->key_length = 0;
 
     f->private_data = state;
@@ -136,7 +139,7 @@ static ssize_t cryptomod_dev_write(struct file *f, const char __user *user_buf, 
     struct cryptodev_state *state = f->private_data;
 
     /*** Check if device is properly set up or already finalized ***/
-    if(!state || state->is_finalized) {
+    if(!state->is_setup || state->is_finalized) {
         pr_err("cryptomod: Device not set up or already finalized.\n");
         return -EINVAL;
     }
@@ -204,7 +207,7 @@ static ssize_t cryptomod_dev_read(struct file *f, char __user *user_buf, size_t 
     // pr_info("cryptomod: Reading %ld data from device.\n", len);
 
     /*** Check if the device is not properly setup ***/
-    if(!state) {
+    if(!state->is_setup) {
         pr_err("cryptomod: Device not set up or already finalized.\n");
         return -EINVAL;
     }
@@ -326,15 +329,26 @@ static long cryptomod_dev_ioctl(struct file *fp, unsigned int cmd, unsigned long
     switch (cmd) {
         case CM_IOC_SETUP:
             if(copy_from_user(&setup, (struct CryptoSetup __user *)arg, sizeof(struct CryptoSetup)) != 0) {
-                return -EBUSY;
+                return -EINVAL;
             }
             
             if(setup.key_len != 16 && setup.key_len != 24 && setup.key_len != 32) {
                 printk(KERN_WARNING "cryptomod: Invalid key length. Expected 16, 24, or 32.\n");
                 return -EINVAL;
             }
+
+            if(setup.io_mode != BASIC && setup.io_mode != ADV) {
+                printk(KERN_WARNING "cryptomod: Invalid IO Mode.\n");
+                return -EINVAL;
+            }
+
+            if(setup.c_mode != ENC && setup.c_mode != DEC) {
+                printk(KERN_WARNING "cryptomod: Invalid Crypto Mode.\n");
+                return -EINVAL;
+            }
             
             state->is_finalized = false;
+            state->is_setup = true;
             
             state->crypto_mode = setup.c_mode;
             state->io_mode = setup.io_mode;
@@ -349,6 +363,11 @@ static long cryptomod_dev_ioctl(struct file *fp, unsigned int cmd, unsigned long
             break;
         
         case CM_IOC_FINALIZE:
+            if(!state->is_setup) {
+                printk(KERN_WARNING "cryptomod: Finalized before setup");
+                return -EINVAL;
+            }
+
             if(state->is_finalized) {
                 printk(KERN_WARNING "cryptomod: Already finalized.\n");
                 return -EINVAL;
