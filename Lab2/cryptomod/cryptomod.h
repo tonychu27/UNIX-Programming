@@ -3,7 +3,7 @@
 
 #define CM_KEY_MAX_LEN 32
 #define CM_BLOCK_SIZE 16
-#define CM_BUF_SIZE 1024
+#define CM_BUF_SIZE 1024 * 5
 
 // ENC: encryption, DEC: decryption
 enum CryptoMode { ENC, DEC };

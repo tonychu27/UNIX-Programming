@@ -143,7 +143,7 @@ static ssize_t cryptomod_dev_write(struct file *f, const char __user *user_buf, 
 
     if(len == 0) return 0;
 
-    pr_info("cryptomod: Writing %ld data to device.\n", len);
+    // pr_info("cryptomod: Writing %ld data to device.\n", len);
 
     if(state->io_mode == BASIC) {
         int err = copy_from_user(state->buf + state->buf_len, user_buf, len);
@@ -159,27 +159,40 @@ static ssize_t cryptomod_dev_write(struct file *f, const char __user *user_buf, 
         return len;
     }
     else if(state->io_mode == ADV) {
-        size_t blocks = len / CM_BLOCK_SIZE;
-        state->remaining = len % CM_BLOCK_SIZE;
+        if(state->crypto_mode == ENC) {
+            size_t blocks = len / CM_BLOCK_SIZE;
+            state->remaining = len % CM_BLOCK_SIZE;
 
-        // pr_info("There will be %ld blocks and %ld remaining bytes.\n", blocks, remaining);
+            for(size_t i = 0; i < blocks; i++) {
+                int err = copy_from_user(state->buf + state->buf_len, user_buf + i * CM_BLOCK_SIZE, CM_BLOCK_SIZE);
+                if(err) {
+                    pr_err("cryptomod: Failed to copy data from user space.\n");
+                    return -EBUSY;
+                }
+                
+                state->buf_len += CM_BLOCK_SIZE;
+                encryption_decryption(state->buf + state->buf_len - CM_BLOCK_SIZE, CM_BLOCK_SIZE, state->key, state->key_length, state->crypto_mode);
 
-        for(size_t i = 0; i < blocks; i++) {
-            int err = copy_from_user(state->buf + state->buf_len, user_buf + i * CM_BLOCK_SIZE, CM_BLOCK_SIZE);
+            }
+
+            total_bytes_written += blocks * CM_BLOCK_SIZE;
+
+            return blocks * CM_BLOCK_SIZE;
+        }
+        else if(state->crypto_mode == DEC) {
+            int err = copy_from_user(state->buf + state->buf_len, user_buf, len);
             if(err) {
                 pr_err("cryptomod: Failed to copy data from user space.\n");
                 return -EBUSY;
             }
-            
-            state->buf_len += CM_BLOCK_SIZE;
-            encryption_decryption(state->buf + state->buf_len - CM_BLOCK_SIZE, CM_BLOCK_SIZE, state->key, state->key_length, state->crypto_mode);
 
-            // for(int j = 0; j < CM_BLOCK_SIZE; j++) pr_info("%02x ", state->buf[state->buf_len - CM_BLOCK_SIZE + j]);
+            state->buf_len += len;
+
+            total_bytes_written += len;
+
+            return len;
         }
-
-        total_bytes_written += blocks * CM_BLOCK_SIZE;
-
-        return blocks * CM_BLOCK_SIZE;
+        
     }   
 
     return 0;
@@ -188,7 +201,7 @@ static ssize_t cryptomod_dev_write(struct file *f, const char __user *user_buf, 
 static ssize_t cryptomod_dev_read(struct file *f, char __user *user_buf, size_t len, loff_t *off) {
     struct cryptodev_state *state = f->private_data;
 
-    pr_info("cryptomod: Reading %ld data from device.\n", len);
+    // pr_info("cryptomod: Reading %ld data from device.\n", len);
 
     /*** Check if the device is not properly setup ***/
     if(!state) {
@@ -205,7 +218,7 @@ static ssize_t cryptomod_dev_read(struct file *f, char __user *user_buf, size_t 
 
     if(state->io_mode == BASIC) {
         if(*off >= state->buf_len) return 0;
-        
+
         size_t available = state->buf_len - *off;
         size_t to_copy = len > available ? available : len;
 
@@ -224,31 +237,80 @@ static ssize_t cryptomod_dev_read(struct file *f, char __user *user_buf, size_t 
     }
     else if(state->io_mode == ADV) {
         
-        if(*off >= state->buf_len) {
-            memset(state->buf, 0, CM_BUF_SIZE);
-            state->buf_len = 0;
-            *off = 0;
-            return 0;
+        if(state->crypto_mode == ENC) {
+            if(*off >= state->buf_len) {
+                memset(state->buf, 0, CM_BUF_SIZE);
+                state->buf_len = 0;
+                *off = 0;
+                return 0;
+            }
+    
+            size_t available = state->buf_len - *off;
+            size_t to_copy = len > available ? available : len;
+    
+            int err = copy_to_user(user_buf, state->buf + *off, to_copy);
+            if(err) {
+                pr_err("Failed to copy data to user space.\n");
+                return -EBUSY;
+            }
+    
+            update_bytes_freq(user_buf, to_copy);
+            
+            *off += to_copy;
+            total_bytes_read += to_copy;
+    
+            return to_copy;
         }
+        else if(state->crypto_mode == DEC) {
+            if (*off >= state->buf_len) return 0;
 
-        size_t available = state->buf_len - *off;
-        size_t to_copy = len > available ? available : len;
-        pr_info("Can only reading %ld data from device.\n", to_copy);
+            size_t available = state->buf_len - *off;
 
-        int err = copy_to_user(user_buf, state->buf + *off, to_copy);
-        if(err) {
-            pr_err("Failed to copy data to user space.\n");
-            return -EBUSY;
-        }
+            if (available <= CM_BLOCK_SIZE && !state->is_finalized) return 0;
 
-        // for(int i  = 0; i < to_copy; i++) pr_info("%02x ", user_buf[i]);
+            size_t to_copy = len > available ? available : len;
 
-        if(state->crypto_mode == ENC) update_bytes_freq(user_buf, to_copy);
+            if (available <= CM_BLOCK_SIZE && state->is_finalized) {
+                u8 temp[CM_BLOCK_SIZE];
+                memcpy(temp, state->buf + *off, CM_BLOCK_SIZE);
         
-        *off += to_copy;
-        total_bytes_read += to_copy;
+                encryption_decryption(temp, CM_BLOCK_SIZE, state->key, state->key_length, state->crypto_mode);
+                int padding = remove_pkcs7_padding(temp, CM_BLOCK_SIZE);
+                if (padding < 0) {
+                    pr_warn("cryptomod: Invalid padding.\n");
+                    return -EINVAL;
+                }
+        
+                size_t actual_data_size = CM_BLOCK_SIZE - padding;
+                if (copy_to_user(user_buf, temp, actual_data_size)) {
+                    pr_err("cryptomod: Failed to copy decrypted data to user space.\n");
+                    return -EBUSY;
+                }
+        
+                state->buf_len -= padding;
+                *off += actual_data_size;
+                total_bytes_read += actual_data_size;
+        
+                return actual_data_size;
+            }
 
-        return to_copy;
+            size_t blocks = to_copy / CM_BLOCK_SIZE;
+
+            for (size_t i = 0; i < blocks; i++) {
+                u8 temp[CM_BLOCK_SIZE];
+                memcpy(temp, state->buf + *off + i * CM_BLOCK_SIZE, CM_BLOCK_SIZE);
+                encryption_decryption(temp, CM_BLOCK_SIZE, state->key, state->key_length, state->crypto_mode);
+                if (copy_to_user(user_buf + i * CM_BLOCK_SIZE, temp, CM_BLOCK_SIZE)) {
+                    pr_err("cryptomod: Failed to copy decrypted data to user space.\n");
+                    return -EBUSY;
+                }
+            }
+
+            *off += blocks * CM_BLOCK_SIZE;
+            total_bytes_read += blocks * CM_BLOCK_SIZE;
+
+            return blocks * CM_BLOCK_SIZE;
+        }
     }
 
     return 0;
@@ -283,7 +345,7 @@ static long cryptomod_dev_ioctl(struct file *fp, unsigned int cmd, unsigned long
             memset(state->buf, 0, CM_BUF_SIZE);
             state->buf_len = 0;
 
-            printk(KERN_INFO "CRYPTOMOD: SETUP COMPLETED");
+            printk(KERN_INFO "CRYPTOMOD: SETUP COMPLETED, IO_MOD: %d, CRYPTO_MOD: %d\n", state->io_mode, state->crypto_mode);
             break;
         
         case CM_IOC_FINALIZE:
