@@ -8,9 +8,10 @@
 @      final @ 0x69600c-696010
 @ ======
 
-mov rsi, 0x496000
-lea rdi, [rsi + 0x200000]
-mov eax, dword ptr [0x696000]
-add eax, dword ptr [0x696004]
-sub eax, dword ptr [0x696008]
-mov dword ptr [0x69600C], eax
+add rsi, 0x200000
+mov eax, [rsi]
+add eax, [rsi + 0x000004]
+sub eax, [rsi + 0x000008]
+mov [rsi + 0x00000c], eax
+
+done:

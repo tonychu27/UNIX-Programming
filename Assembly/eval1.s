@@ -14,3 +14,5 @@ mov ebx, [rsi + 0x200004]
 sub ebx, [rsi + 0x200008]
 add eax, ebx
 mov [rsi + 0x20000c], eax
+
+done:

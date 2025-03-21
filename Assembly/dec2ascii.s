@@ -5,3 +5,5 @@
 
 add al, '0'
 mov [rsi], al
+
+done:
