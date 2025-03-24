@@ -9,3 +9,15 @@
 ;       var2 @ 0x7cb004-7cb008
 ;       var3 @ 0x7cb008-7cb00c
 ; ======
+
+add rsi, 0x200000
+mov eax, [rsi]
+mov ecx, [rsi + 0x000004]
+neg ecx
+imul ecx
+mov ecx, [rsi + 0x000008]
+sub ecx, ebx
+cdq
+idiv ecx
+mov [rsi + 0x000008], eax
+done:

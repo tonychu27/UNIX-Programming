@@ -9,3 +9,19 @@
 ;       str1 @ 0x7b2000-7b2014
 ; ======
 ; Enter your codes: (type 'done:' when done)
+
+add rsi, 0x200000
+mov rdi, rsi
+mov rcx, 16
+
+convert_loop:
+    shl ax, 1
+    setc dl
+
+    add dl, '0'
+    mov [rdi], dl
+
+    inc rdi
+    loop convert_loop
+
+done:

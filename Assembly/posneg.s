@@ -12,3 +12,32 @@
 ;       var3 @ 0x7b3008-7b300c
 ;       var4 @ 0x7b300c-7b3010
 ; ======
+
+add rsi, 0x200000
+
+mov dword ptr [rsi], 1
+mov dword ptr [rsi+4], 1
+mov dword ptr [rsi+8], 1
+mov dword ptr [rsi+12], 1
+
+test eax, eax
+jns skip1
+mov dword ptr [rsi], -1 
+skip1:
+
+test ebx, ebx
+jns skip2
+mov dword ptr [rsi+4], -1
+skip2:
+
+test ecx, ecx
+jns skip3
+mov dword ptr [rsi+8], -1
+skip3:
+
+test edx, edx
+jns skip4
+mov dword ptr [rsi+12], -1
+skip4:
+
+done:

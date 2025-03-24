@@ -10,3 +10,18 @@
 ;       var3 @ 0x7e8008-7e800c
 ;       var4 @ 0x7e800c-7e8010
 ; ======
+
+add rsi, 0x200000
+mov eax, [rsi + 0x000004]
+neg eax
+mov ebx, [rsi + 0x000008]
+mov edx, 0x0
+cdq
+idiv ebx
+mov ebx, edx
+mov eax, [rsi]
+imul eax, -5
+cdq
+idiv ebx
+mov [rsi + 0x00000c], eax
+done:

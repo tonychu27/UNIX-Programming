@@ -9,3 +9,23 @@
 ;       str1 @ 0x6b3000-6b3010
 ;       str2 @ 0x6b3010-6b3020
 ; ======
+
+add rsi, 0x200000
+mov rdi, rsi
+add rdi, 0x000010
+mov rcx, 15
+
+convert_loop:
+    mov al, [rsi]
+    cmp al, 'A'
+    jg not_uppercase
+
+    add al, 32
+
+not_uppercase:
+    mov [rdi], al           
+    inc rsi
+    inc rdi
+    loop convert_loop
+
+done:

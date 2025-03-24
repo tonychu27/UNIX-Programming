@@ -8,3 +8,9 @@
 ;       val1 @ 0x759000-759001
 ;       val2 @ 0x759001-759002
 ; ======
+
+add rsi, 0x200000
+and ax, 0x0FE0
+shr ax, 5
+mov [rsi], al
+done:
