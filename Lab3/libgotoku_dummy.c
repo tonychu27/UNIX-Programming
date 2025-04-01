@@ -73,7 +73,7 @@ err_quit:
 static int cmpint(const void *a, const void *b) {
 	int pa = *((int *) a);
 	int pb = *((int *) b);
-	return pa > pb;
+	return pa - pb;
 }
 
 static int game_check_internal(int numbers[9]) {
@@ -173,4 +173,3 @@ void gop_fill_9() { gop_fill(9); }
 #define GAME_OP(n)	void gop_##n() { gop_random(); }
 #include "gops.c"
 #undef GAME_OP
-

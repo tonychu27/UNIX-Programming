@@ -64,7 +64,7 @@ int load_puzzle(const char *filename, int grid[SIZE][SIZE]) {
 int main() {
     int grid[SIZE][SIZE];
 
-    int err = load_puzzle("gotoku.txt", grid);
+    int err = load_puzzle("/gotoku.txt", grid);
     if(!err) {
         printf("Error loading file");
         exit(1);

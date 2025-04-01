@@ -1,11 +1,14 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -fPIC
-LDFLAGS = -dynamiclib
+CFLAGS = -Wall -fPIC
+LDFLAGS = -shared
 
-all: libgotoku.so
+all: libgotoku.so gotoku.local
 
 libgotoku.so: libgotoku_dummy.c
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $<
+
+gotoku.local: gotoku.c
+	$(CC) $(CFLAGS) -o $@ $< -L. -lgotoku -Wl,-rpath=.
 
 clean:
-	rm -f libgotoku.so gotoku.local 
+	rm -f libgotoku.so gotoku.local
