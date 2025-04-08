@@ -8,3 +8,10 @@
 | :--- | ---:|
 | Lab1 | dcoker & pwntools |
 | Lab2 | Cryptomod: Encrypt and Decrypt Data Using a Kernel Module |
+| Lab3 | Gotoku |
+
+| Homework | Name |
+| :--- | ---: |
+| HW1 | System Call Hook and Logging - Zpoline |
+
+
