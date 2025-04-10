@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -shared -fPIC -g
-TARGET = libzpoline.so.1
+TARGET = libzpoline.so.2
 SRC = libzpoline.c
 
 all: $(TARGET)
