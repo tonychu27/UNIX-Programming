@@ -30,28 +30,31 @@
 /*** rdi, rsi, rdx, r10, r8, r9 ***/
 
 extern int64_t trigger_syscall(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t);
+extern void syscall_addr(void);
 
 void __raw_asm() {
     asm volatile(
+        ".global trigger_syscall \n\t"
         "trigger_syscall: \n\t"
-        "mov 8(%rsp), %rax \n\t"
-        "mov %rdi, %rdi \n\t"
-        "mov %rsi, %rsi \n\t"
-        "mov %rdx, %rdx \n\t"
-        "mov %rcx, %rcx \n\t"
-        "mov %r8, %r8 \n\t"
-        "mov %r9, %r9 \n\t"
-        "mov %rcx, %r10 \n\t"
+        "movq %rdi, %rax \n\t"
+	    "movq %rsi, %rdi \n\t"
+	    "movq %rdx, %rsi \n\t"
+	    "movq %rcx, %rdx \n\t"
+	    "movq %r8, %r10 \n\t"
+	    "movq %r9, %r8 \n\t"
+	    "movq 8(%rsp),%r9 \n\t"
+        ".global syscall_addr \n\t"
+        "syscall_addr: \n\t"
         "syscall \n\t"
         "ret \n\t"
     );
 }
 
-int64_t handler(int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t arg5, int64_t arg6, int64_t syscall_num) {
+int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx, uint64_t r8, uint64_t r9, uint64_t r10_stack, uint64_t rax_stack) {
 
-    if(syscall_num == SYS_write && arg1 == STDOUT_FILENO) {
+    if(rax_stack == SYS_write && rdi == STDOUT_FILENO) {
 
-        char *buf = (char *)arg2;
+        char *buf = (char *)rsi;
 
         for(size_t i = 0; buf[i] != '\0'; i++) {
             switch(buf[i]) {
@@ -66,26 +69,26 @@ int64_t handler(int64_t arg1, int64_t arg2, int64_t arg3, int64_t arg4, int64_t 
             }
         }
         
-        return trigger_syscall(arg1, (int64_t)buf, arg3, arg4, arg5, arg6, syscall_num);
+        return trigger_syscall(rax_stack, rdi, (uint64_t)buf, rdx, r10_stack, r8, r9);
     }
 
-    return trigger_syscall(arg1, arg2, arg3, arg4, arg5, arg6, syscall_num);
+    return trigger_syscall(rax_stack, rdi, rsi, rdx, r10_stack, r8, r9);
 }
 
 void trampoline() {
-
     asm volatile(
-        "push %rax \n\t"
-        "mov %rdi, %rdi \n\t"
-        "mov %rsi, %rsi \n\t"
-        "mov %rdx, %rdx \n\t"
-        "mov %r8, %r8 \n\t"
-        "mov %r9, %r9 \n\t"
-        "mov %r10, %r10 \n\t"
-        "mov %r10, %rcx \n\t"
-        "call handler \n\t"
-        "pop %rax \n\t"
-        "xor %rax, %rax \n\t"
+        "pushq %rbp \n\t"
+        "movq %rsp, %rbp \n\t"
+        "andq $-16, %rsp \n\t"
+
+        "pushq %rax \n\t"
+        "pushq %r10 \n\t"
+
+        "callq handler \n\t"
+
+        "popq %r10 \n\t"
+        "addq $8, %rsp \n\t"
+        "leaveq \n\t"
     );
 }
 
@@ -102,14 +105,6 @@ void setup_trampoline() {
 
     uint8_t *p = (uint8_t *)mem + TRAMPOLINE_SIZE;
     uintptr_t trampoline_addr = (uintptr_t)trampoline;
-
-    // *p++ = 0x48;
-	// *p++ = 0x81;
-	// *p++ = 0xec;
-	// *p++ = 0x80;
-	// *p++ = 0x00;
-	// *p++ = 0x00;
-	// *p++ = 0x00;
 
     /*** Move trampoline's address into r11 ***/
     *p++ = 0x49;
@@ -175,6 +170,7 @@ void rewrite_code() {
                             uint8_t *p = (uint8_t *)j;
                             
                             if(*p == 0x0F && *(p + 1) == 0x05) {
+                                if((uintptr_t) p == (uintptr_t) syscall_addr) continue;
 
                                 if(mprotect((char*)from, (size_t)(to - from), PROT_READ | PROT_WRITE | PROT_EXEC) == -1) {
                                     perror("mprotect");
@@ -207,6 +203,6 @@ void rewrite_code() {
 
 
 __attribute__((constructor)) void init() {
- setup_trampoline();
+    setup_trampoline();
     rewrite_code();
 }
