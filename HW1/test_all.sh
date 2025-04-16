@@ -15,3 +15,9 @@ echo ""
 LD_PRELOAD=./libzpoline.so.2 cat ex2-2.txt
 echo ""
 echo ""
+
+echo "Testing ex3:"
+echo ""
+LD_PRELOAD=./libzpoline.so LIBZPHOOK=./libex3hook.so ./ex3
+echo ""
+echo ""

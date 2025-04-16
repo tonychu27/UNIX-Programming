@@ -8,7 +8,9 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include <pthread.h>
+#include <dlfcn.h>
+#include <sched.h>
+#include <assert.h>
 
 #define MEMORY_SIZE 4096
 #define TRAMPOLINE_SIZE 512
@@ -18,7 +20,8 @@
 /*** Debugging ***/
 /*
     gdb /lib64/ld-linux-x86-64.so.2
-    r --preload ./libzpoline.so.2 /usr/bin/echo '7h15 15 4 l337 73x7'
+    set env LIBZPHOOK=./libex3hook.so 
+    r --preload ./libzpoline.so ./ex3
 */
 
 /*** Calling Convention ***/
@@ -32,17 +35,14 @@
 extern int64_t trigger_syscall(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t);
 extern void syscall_addr(void);
 
+typedef int64_t (*syscall_hook_fn_t)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t);
+syscall_hook_fn_t hook_syscall = NULL;
+
 void __raw_asm() {
     asm volatile(
         ".global trigger_syscall \n\t"
         "trigger_syscall: \n\t"
-        "movq %rdi, %rax \n\t"
-	    "movq %rsi, %rdi \n\t"
-	    "movq %rdx, %rsi \n\t"
-	    "movq %rcx, %rdx \n\t"
-	    "movq %r8, %r10 \n\t"
-	    "movq %r9, %r8 \n\t"
-	    "movq 8(%rsp),%r9 \n\t"
+	    "movq 8(%rsp), %rax \n\t"
         ".global syscall_addr \n\t"
         "syscall_addr: \n\t"
         "syscall \n\t"
@@ -50,7 +50,7 @@ void __raw_asm() {
     );
 }
 
-int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx, uint64_t r8, uint64_t r9, uint64_t r10_stack, uint64_t rax_stack) {
+int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx __attribute__((unused)), uint64_t r8, uint64_t r9, uint64_t r10_stack, uint64_t rax_stack) {
 
     if(rax_stack == SYS_write && rdi == STDOUT_FILENO) {
 
@@ -69,10 +69,11 @@ int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx, uint64_t
             }
         }
         
-        return trigger_syscall(rax_stack, rdi, (uint64_t)buf, rdx, r10_stack, r8, r9);
+        return hook_syscall(rdi, (uint64_t)buf, rdx, r10_stack, r8, r9, rax_stack);
     }
 
-    return trigger_syscall(rax_stack, rdi, rsi, rdx, r10_stack, r8, r9);
+    if(hook_syscall == NULL) return trigger_syscall(rdi, rsi, rdx, r10_stack, r8, r9, rax_stack);
+    return hook_syscall(rdi, rsi, rdx, r10_stack, r8, r9, rax_stack);
 }
 
 void trampoline() {
@@ -106,6 +107,15 @@ void setup_trampoline() {
     uint8_t *p = (uint8_t *)mem + TRAMPOLINE_SIZE;
     uintptr_t trampoline_addr = (uintptr_t)trampoline;
 
+
+	// *p++ = 0x48;
+	// *p++ = 0x81;
+	// *p++ = 0xec;
+	// *p++ = 0x80;
+	// *p++ = 0x00;
+	// *p++ = 0x00;
+	// *p++ = 0x00;
+
     /*** Move trampoline's address into r11 ***/
     *p++ = 0x49;
     *p++ = 0xBB;
@@ -117,7 +127,7 @@ void setup_trampoline() {
     *p++ = 0xFF;
     *p++ = 0xE3;
 
-    if (mprotect(0, MEMORY_SIZE, PROT_EXEC) == -1) {
+    if (mprotect(0, MEMORY_SIZE, PROT_READ | PROT_EXEC) == -1) {
         perror("mprotect");
         exit(1);
     }
@@ -201,8 +211,32 @@ void rewrite_code() {
     fclose(fp);
 }
 
+void load_hook_library() {
+    const char *filename = getenv("LIBZPHOOK");
+    if(!filename) {
+        fprintf(stderr, "env LIBZPHOOK is empty, so skip to load a hook library\n");
+        return;
+    }
+
+    void *handle = dlmopen(LM_ID_NEWLM, filename, RTLD_NOW | RTLD_LOCAL);
+    if(!handle) {
+        fprintf(stderr, "Failed to load hook library: %s\n", dlerror());
+        exit(1);
+    }
+
+    void (*hook_init)(const syscall_hook_fn_t, syscall_hook_fn_t*);
+    hook_init = dlsym(handle, "__hook_init");
+    if(!hook_init) {
+        fprintf(stderr, "Failed to load hook init function: %s\n", dlerror());
+        exit(1);
+    }
+
+    hook_syscall = trigger_syscall;
+    hook_init(trigger_syscall, &hook_syscall);
+}   
 
 __attribute__((constructor)) void init() {
     setup_trampoline();
     rewrite_code();
+    load_hook_library();
 }
