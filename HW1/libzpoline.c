@@ -1,4 +1,5 @@
 #define _GNU_SOURCE
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
@@ -11,17 +12,21 @@
 #include <dlfcn.h>
 #include <sched.h>
 #include <assert.h>
+#include <time.h>
 
 #define MEMORY_SIZE 4096
 #define TRAMPOLINE_SIZE 512
+
+// #define ENABLE_LEETSPEAK
+
 #define TRAP asm volatile("int3");
 #define trap asm volatile("int3");
 
 /*** Debugging ***/
 /*
     gdb /lib64/ld-linux-x86-64.so.2
-    set env LIBZPHOOK=./libex3hook.so 
-    r --preload ./libzpoline.so ./ex3
+    set env LIBZPHOOK=./logger.so 
+    r --preload ./libzpoline.so python3 -c 'import os; os.system("wget http://www.google.com -q -t 1")'
 */
 
 /*** Calling Convention ***/
@@ -43,6 +48,7 @@ void __raw_asm() {
         ".global trigger_syscall \n\t"
         "trigger_syscall: \n\t"
 	    "movq 8(%rsp), %rax \n\t"
+        "movq %rcx, %r10 \n\t"
         ".global syscall_addr \n\t"
         "syscall_addr: \n\t"
         "syscall \n\t"
@@ -50,8 +56,9 @@ void __raw_asm() {
     );
 }
 
-int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx __attribute__((unused)), uint64_t r8, uint64_t r9, uint64_t r10_stack, uint64_t rax_stack) {
+int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx __attribute__((unused)), uint64_t r8, uint64_t r9, uint64_t r10_stack, uint64_t rax_stack, uint64_t retptr) {
 
+#ifdef ENABLE_LEETSPEAK
     if(rax_stack == SYS_write && rdi == STDOUT_FILENO) {
 
         char *buf = (char *)rsi;
@@ -71,7 +78,23 @@ int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx __attribu
         
         return hook_syscall(rdi, (uint64_t)buf, rdx, r10_stack, r8, r9, rax_stack);
     }
+#endif
 
+    if (rax_stack == 435) {
+        uint64_t *ca = (uint64_t *) rdi;
+        if (ca[0] & CLONE_VM) {
+            ca[6] -= sizeof(uint64_t);
+            *((uint64_t *) (ca[5] + ca[6])) = retptr;
+        }
+    }
+
+    if (rax_stack == __NR_clone) {
+		if (rdi & CLONE_VM) {
+			rsi -= sizeof(uint64_t);
+			*((uint64_t *) rsi) = retptr;
+		}
+    }
+    
     if(hook_syscall == NULL) return trigger_syscall(rdi, rsi, rdx, r10_stack, r8, r9, rax_stack);
     return hook_syscall(rdi, rsi, rdx, r10_stack, r8, r9, rax_stack);
 }
@@ -82,13 +105,31 @@ void trampoline() {
         "movq %rsp, %rbp \n\t"
         "andq $-16, %rsp \n\t"
 
+        "pushq %r11 \n\t"
+        "pushq %r9 \n\t"
+        "pushq %r8 \n\t"
+        "pushq %rdi \n\t"
+        "pushq %rsi \n\t"
+        "pushq %rdx \n\t"
+        "pushq %rcx \n\t"
+        
+        "pushq 136(%rbp) \n\t"
         "pushq %rax \n\t"
         "pushq %r10 \n\t"
 
-        "callq handler \n\t"
+        "callq handler@plt \n\t"
 
         "popq %r10 \n\t"
-        "addq $8, %rsp \n\t"
+        "addq $16, %rsp \n\t"
+        
+        "popq %rcx \n\t"
+        "popq %rdx \n\t"
+        "popq %rsi \n\t"
+        "popq %rdi \n\t"
+        "popq %r8 \n\t"
+        "popq %r9 \n\t"
+        "popq %r11 \n\t"
+
         "leaveq \n\t"
     );
 }
@@ -143,7 +184,7 @@ void rewrite_code() {
     char line[4096];
     while(fgets(line, sizeof(line), fp) != NULL) {
 
-        if ((strstr(line, "[vdso]\n") == NULL) && (strstr(line, "[vsyscall]\n") == NULL)) {
+        if ((strstr(line, "[stack]\n") == NULL) && (strstr(line, "[vdso]\n") == NULL) && (strstr(line, "[vsyscall]\n") == NULL)) {
                 
             int i = 0;
             char addr[65] = {0};
