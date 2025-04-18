@@ -13,6 +13,7 @@
 #include <sched.h>
 #include <assert.h>
 #include <time.h>
+#include <dis-asm.h>
 
 #define MEMORY_SIZE 4096
 #define TRAMPOLINE_SIZE 512
@@ -26,7 +27,7 @@
 /*
     gdb /lib64/ld-linux-x86-64.so.2
     set env LIBZPHOOK=./logger.so 
-    r --preload ./libzpoline.so python3 -c 'import os; os.system("wget http://www.google.com -q -t 1")'
+    r --preload ./libzpoline.so /usr/bin/python3 -c 'import os; os.system("wget http://www.google.com -q -t 1")'
 */
 
 /*** Calling Convention ***/
@@ -49,9 +50,11 @@ void __raw_asm() {
         "trigger_syscall: \n\t"
 	    "movq 8(%rsp), %rax \n\t"
         "movq %rcx, %r10 \n\t"
+    
         ".global syscall_addr \n\t"
         "syscall_addr: \n\t"
         "syscall \n\t"
+
         "ret \n\t"
     );
 }
@@ -80,7 +83,7 @@ int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx __attribu
     }
 #endif
 
-    if (rax_stack == 435) {
+    if (rax_stack == __NR_clone3) {
         uint64_t *ca = (uint64_t *) rdi;
         if (ca[0] & CLONE_VM) {
             ca[6] -= sizeof(uint64_t);
@@ -89,10 +92,10 @@ int64_t handler(uint64_t rdi, uint64_t rsi, uint64_t rdx, uint64_t rcx __attribu
     }
 
     if (rax_stack == __NR_clone) {
-		if (rdi & CLONE_VM) {
-			rsi -= sizeof(uint64_t);
-			*((uint64_t *) rsi) = retptr;
-		}
+        if (rdi & CLONE_VM) {
+            rsi -= sizeof(uint64_t);
+            *((uint64_t *) rsi) = retptr;
+        }
     }
     
     if(hook_syscall == NULL) return trigger_syscall(rdi, rsi, rdx, r10_stack, r8, r9, rax_stack);
@@ -103,6 +106,9 @@ void trampoline() {
     asm volatile(
         "pushq %rbp \n\t"
         "movq %rsp, %rbp \n\t"
+
+        "subq $128, %rsp \n\t"
+
         "andq $-16, %rsp \n\t"
 
         "pushq %r11 \n\t"
@@ -113,11 +119,11 @@ void trampoline() {
         "pushq %rdx \n\t"
         "pushq %rcx \n\t"
         
-        "pushq 136(%rbp) \n\t"
+        "pushq 16(%rbp) \n\t"
         "pushq %rax \n\t"
         "pushq %r10 \n\t"
 
-        "callq handler@plt \n\t"
+        "callq handler \n\t"
 
         "popq %r10 \n\t"
         "addq $16, %rsp \n\t"
@@ -130,8 +136,11 @@ void trampoline() {
         "popq %r9 \n\t"
         "popq %r11 \n\t"
 
+        "addq $128, %rsp\n\t"
+
         "leaveq \n\t"
     );
+    
 }
 
 void setup_trampoline() {
@@ -147,15 +156,6 @@ void setup_trampoline() {
 
     uint8_t *p = (uint8_t *)mem + TRAMPOLINE_SIZE;
     uintptr_t trampoline_addr = (uintptr_t)trampoline;
-
-
-	// *p++ = 0x48;
-	// *p++ = 0x81;
-	// *p++ = 0xec;
-	// *p++ = 0x80;
-	// *p++ = 0x00;
-	// *p++ = 0x00;
-	// *p++ = 0x00;
 
     /*** Move trampoline's address into r11 ***/
     *p++ = 0x49;
@@ -174,6 +174,29 @@ void setup_trampoline() {
     }
 }
 
+struct disassembly_state {
+    char *code;
+    size_t off;
+};
+
+static int do_rewrite(void *data, enum disassembler_style style ATTRIBUTE_UNUSED, const char *fmt, ...) {
+    struct disassembly_state *s = (struct disassembly_state *) data;
+    char buf[4096];
+    va_list arg;
+    va_start(arg, fmt);
+    vsprintf(buf, fmt, arg);
+    if (!strncmp(buf, "syscall", 7) || !strncmp(buf, "sysenter", 8)) {
+        uint8_t *ptr = (uint8_t *)(((uintptr_t) s->code) + s->off);
+        if ((uintptr_t) ptr == (uintptr_t) syscall_addr) {
+            va_end(arg);
+            return 0;
+        }
+
+        ptr[0] = 0xff;
+        ptr[1] = 0xd0;
+    }
+}
+
 void rewrite_code() {
     FILE *fp = fopen("/proc/self/maps", "r");
     if (fp == NULL) {
@@ -184,7 +207,7 @@ void rewrite_code() {
     char line[4096];
     while(fgets(line, sizeof(line), fp) != NULL) {
 
-        if ((strstr(line, "[stack]\n") == NULL) && (strstr(line, "[vdso]\n") == NULL) && (strstr(line, "[vsyscall]\n") == NULL)) {
+        if ((strstr(line, "[vdso]\n") == NULL) && (strstr(line, "[vsyscall]\n") == NULL)) {
                 
             int i = 0;
             char addr[65] = {0};
@@ -212,30 +235,37 @@ void rewrite_code() {
 
                         int64_t from, to;
                         from = strtol(&addr[0], NULL, 16);
-                        if(from >= 0 && from <= 512) {/*** Skip it since it is trampoline code ***/ break;}
+                        if(from == 0) {/*** Skip it since it is trampoline code ***/ break;}
                         
                         to = strtol(&addr[k + 1], NULL, 16);
 
-                        /*** disassemable ***/                        
-                        for(int64_t j = from; j < to; j++) {
-                            uint8_t *p = (uint8_t *)j;
-                            
-                            if(*p == 0x0F && *(p + 1) == 0x05) {
-                                if((uintptr_t) p == (uintptr_t) syscall_addr) continue;
+                        struct disassembly_state s = {0};
 
-                                if(mprotect((char*)from, (size_t)(to - from), PROT_READ | PROT_WRITE | PROT_EXEC) == -1) {
-                                    perror("mprotect");
-                                    exit(1);
-                                }
-                               
-                                *p = 0xFF;
-                                *(p + 1) = 0xD0;
-                                
-                                if(mprotect((char*)from, (size_t)(to - from), PROT_READ | PROT_EXEC) == -1) {
-                                    perror("mprotect");
-                                    exit(1);
-                                }
-                            }
+                        if(mprotect((char*)from, (to - from), PROT_WRITE | PROT_READ | PROT_EXEC) == -1) {
+                            perror("mprotect");
+                            exit(EXIT_FAILURE);
+                        }
+
+                        disassemble_info disasm_info = {0};
+
+                        init_disassemble_info(&disasm_info, &s, (fprintf_ftype)printf, do_rewrite);
+
+                        disasm_info.arch = bfd_arch_i386;
+                        disasm_info.mach = bfd_mach_x86_64;
+                        disasm_info.buffer = (bfd_byte *)from;
+                        disasm_info.buffer_length = (to - from);
+
+                        disassemble_init_for_target(&disasm_info);
+                        disassembler_ftype disasm;
+                        
+                        disasm = disassembler(bfd_arch_i386, false, bfd_mach_x86_64, NULL);
+                        
+                        s.code = (char*)from;
+                        while (s.off < (to - from)) s.off += disasm(s.off, &disasm_info);
+                        
+                        if(mprotect((char*)from, (to - from), mem_protect) == -1) {
+                            perror("mprotect");
+                            exit(1);
                         }
                         
                     }

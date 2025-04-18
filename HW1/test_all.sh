@@ -1,3 +1,6 @@
+make clean
+make
+
 echo "Testing ex1:"
 LD_PRELOAD=./libzpoline.so.1 ./ex1
 echo ""
@@ -35,3 +38,5 @@ echo ""
 
 echo "Testing ex6:"
 LD_PRELOAD=./libzpoline.so LIBZPHOOK=./logger.so python3 -c 'import os; os.system("wget http://www.google.com -q -t 1")'
+
+rm -rf index*

@@ -12,14 +12,13 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <sys/un.h>
-#include <time.h>
 
 #define trap asm volatile("int3");
 
 /*
     gdb /lib64/ld-linux-x86-64.so.2
     set env LIBZPHOOK=./logger.so 
-    r --preload ./libzpoline.so python3 -c 'import os; os.system("wget http://www.google.com -q -t 1")'
+    r --preload ./libzpoline.so /usr/bin/python3 -c 'import os; os.system("wget http://www.google.com -q -t 1")'
  */
 
 typedef int64_t (*syscall_hook_fn_t)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t, int64_t);
@@ -59,6 +58,7 @@ static void IPv4_address(struct sockaddr *addr, char addr_str[256]) {
     for(int j = n - 1; j >= 0; j--) addr_str[len++] = port_str[j];
     addr_str[len] = '\0';
 }
+
 static void IPv6_address(struct sockaddr *addr, char addr_str[256]) {
     struct sockaddr_in6 *in6 = (struct sockaddr_in6*)addr;
     uint8_t *ip6 = (uint8_t*)&in6->sin6_addr;
@@ -89,6 +89,7 @@ static void IPv6_address(struct sockaddr *addr, char addr_str[256]) {
     for(int i = len - 1; i >= 0; i--) addr_str[offset++] = port_str[i];
     addr_str[offset] = '\0';
 }
+
 static void unix_address(struct sockaddr *addr, char addr_str[256]) {
     struct sockaddr_un *un = (struct sockaddr_un *)addr;
     const char *prefix = "UNIX:";
@@ -110,9 +111,8 @@ static void escape_and_print(const char *buf, size_t len) {
 }
 
 static int64_t syscall_hook_fn(int64_t rdi, int64_t rsi, int64_t rdx, int64_t r10, int64_t r8, int64_t r9, int64_t rax) {
-    // fprintf(stderr, "Intercepted syscall: %ld\n\n", rax);
 
-    if(rax == 257) {
+    if(rax == SYS_openat) {
         int dirfd = rdi;
         const char *pathname = (const char*)rsi;
         int flags = rdx;
@@ -127,8 +127,7 @@ static int64_t syscall_hook_fn(int64_t rdi, int64_t rsi, int64_t rdx, int64_t r1
 
         return ret;
     }
-    
-    if(rax == 0) {
+    else if(rax == SYS_read) {
         int fd = rdi;
         char *buf = (char*)rsi;
         size_t count = rdx;
@@ -137,7 +136,7 @@ static int64_t syscall_hook_fn(int64_t rdi, int64_t rsi, int64_t rdx, int64_t r1
 
         fprintf(stderr, "[logger] read(%d, ", fd);
         size_t log_len = (ret > 32) ? 32 : (ret > 0 ? ret : 0);
-
+        
         escape_and_print(buf, log_len);
 
         if (ret > 32) fputs("...", stderr);
@@ -146,8 +145,7 @@ static int64_t syscall_hook_fn(int64_t rdi, int64_t rsi, int64_t rdx, int64_t r1
 
         return ret;
     }
-
-    if(rax == 1) {
+    else if(rax == SYS_write) {
         int fd = rdi;
         const char *buf = (const char*)rsi;
         size_t count = rdx;
@@ -164,11 +162,9 @@ static int64_t syscall_hook_fn(int64_t rdi, int64_t rsi, int64_t rdx, int64_t r1
 
         return ret;
     }
-
-    if(rax == 42) {
+    else if(rax == SYS_connect) {
         int fd = rdi;
         struct sockaddr *addr = (struct sockaddr*)rsi;
-        unsigned char *raw = (unsigned char *)addr;
         
         socklen_t addrlen = rdx;
 
@@ -184,8 +180,7 @@ static int64_t syscall_hook_fn(int64_t rdi, int64_t rsi, int64_t rdx, int64_t r1
         fprintf(stderr, "[logger] connect(%d, \"%s\", %d) = %ld\n", fd, addr_str, addrlen, ret);
         return ret;
     }
-
-    if(rax == 59) {
+    else if(rax == SYS_execve) {
         const char *filename = (const char*)rdi;
         void *argv = (void*)rsi;
         void *envp = (void*)rdx;
