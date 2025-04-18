@@ -5,13 +5,13 @@
 2025 Spring NYCU, Chun-Ying Huang
 
 | Lab | Name |
-| :--- | ---:|
-| Lab1 | dcoker & pwntools |
+| :--- | :---|
+| Lab1 | Dcoker & Pwntools |
 | Lab2 | Cryptomod: Encrypt and Decrypt Data Using a Kernel Module |
-| Lab3 | Gotoku |
+| Lab3 | Gotoku - GOT Hijacking |
 
 | Homework | Name |
-| :--- | ---: |
+| :--- | :--- |
 | HW1 | System Call Hook and Logging - Zpoline |
 
 
