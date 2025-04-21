@@ -1,5 +1,6 @@
 %include "libmini.inc"
 %define SIGSET_ALL 0xFFFFFFFF
+%define CONST 0x5851f42d4c957f2d
 
 ; Syscall Calling Convention
 ; rdi, rsi, rdx, r10, r8, r9
@@ -45,7 +46,7 @@ grand:
 
 rand:
     mov     rax, [rel my_seed]
-    mov     rcx, 0x5851f42d4c957f2d
+    mov     rcx, CONST
 
     mul     rcx
     add     rax, 1
@@ -60,7 +61,8 @@ rand:
 
 ; int sigemptyset(sigset_t *set)
 sigemptyset:
-    mov     dword [rdi], 0
+    xor     rax, rax
+    mov     qword [rdi], rax
     xor     eax, eax
     ret
 
@@ -129,11 +131,50 @@ sigprocmask:
     ret
 
 ; int setjmp(jmp_buf jb)
-setjmp: ; Haven't implemented
+setjmp:
+    mov     rax, [rsp]
+    mov     [rdi + 0], rax
+
+    mov     [rdi + 8],  rbx
+    mov     [rdi + 16], rbp
+    mov     [rdi + 24], rsp
+    mov     [rdi + 32], r12
+    mov     [rdi + 40], r13
+    mov     [rdi + 48], r14
+    mov     [rdi + 56], r15
+
+    mov     eax, 14
+    lea     rdx, [rdi + 64]
+    xor     rdi, rdi
+    xor     rsi, rsi
+    mov     r10, 8
+    syscall
+
+    xor     eax, eax
+    ret
 
 ; void longjmp(jmp_buf jb, int ret);
-longjmp: ; Haven't implemented
-    ret
+longjmp:  
+    mov     r15, [rdi + 56]
+    mov     r14, [rdi + 48]
+    mov     r13, [rdi + 40]
+    mov     r12, [rdi + 32]
+    mov     rsp, [rdi + 24]
+    mov     rbp, [rdi + 16]
+    mov     rbx, [rdi + 8]
+
+    mov     eax, 14
+    lea     rsi, [rdi + 64]
+    push    rdi
+    mov     rdi, 2
+    xor     rdx, rdx
+    mov     r10, 8
+    syscall
+
+    mov     eax, esi
+    pop     rdi
+    jmp     qword [rdi]
+
 
 error:
     mov     eax, -1
