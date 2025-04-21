@@ -12,3 +12,12 @@
 ; ======
 ; * BASEADDR rsi = 0x404000, DATAADDR = BASEADDR + 0x200000
 ; ======
+
+call a
+jmp exit
+
+a:
+    mov rax, [rsp]
+    ret
+exit:
+done:

@@ -4,3 +4,6 @@
 ; ======
 ; * BASEADDR rsi = 0x51f000, DATAADDR = BASEADDR + 0x200000
 ; ======
+
+add ch, 0x20
+done:
