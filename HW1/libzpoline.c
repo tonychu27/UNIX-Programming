@@ -207,7 +207,7 @@ void rewrite_code() {
     char line[4096];
     while(fgets(line, sizeof(line), fp) != NULL) {
 
-        if ((strstr(line, "[vdso]\n") == NULL) && (strstr(line, "[vsyscall]\n") == NULL)) {
+        if ((strstr(line, "[vdso]\n") == NULL)) {
                 
             int i = 0;
             char addr[65] = {0};
@@ -233,6 +233,8 @@ void rewrite_code() {
                             }
                         }
 
+                        uintptr_t page_size = sysconf(_SC_PAGESIZE);
+
                         int64_t from, to;
                         from = strtol(&addr[0], NULL, 16);
                         if(from == 0) {/*** Skip it since it is trampoline code ***/ break;}
@@ -241,7 +243,12 @@ void rewrite_code() {
 
                         struct disassembly_state s = {0};
 
-                        if(mprotect((char*)from, (to - from), PROT_WRITE | PROT_READ | PROT_EXEC) == -1) {
+                        uintptr_t aligned_from = (uintptr_t)from & ~(page_size - 1);
+                        uintptr_t aligned_to = (uintptr_t)to & ~(page_size - 1);
+                        size_t aligned_size = aligned_to - aligned_from;
+                        
+
+                        if (mprotect((void*)aligned_from, aligned_size, PROT_READ | PROT_WRITE | PROT_EXEC) == -1) {
                             perror("mprotect");
                             exit(EXIT_FAILURE);
                         }
@@ -263,9 +270,9 @@ void rewrite_code() {
                         s.code = (char*)from;
                         while (s.off < (to - from)) s.off += disasm(s.off, &disasm_info);
                         
-                        if(mprotect((char*)from, (to - from), mem_protect) == -1) {
+                        if (mprotect((void*)aligned_from, aligned_size, mem_protect) == -1) {
                             perror("mprotect");
-                            exit(1);
+                            exit(EXIT_FAILURE);
                         }
                         
                     }
