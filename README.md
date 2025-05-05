@@ -10,6 +10,7 @@
 | Lab2 | Cryptomod: Encrypt and Decrypt Data Using a Kernel Module |
 | Lab3 | Gotoku - GOT Hijacking |
 | Lab4 | Assembly and setjmp |
+| Lab5 | Let’s Race Together! |
 
 | Homework | Name |
 | :--- | :--- |
