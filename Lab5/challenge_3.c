@@ -185,7 +185,6 @@ int check_path(const char *path, const char *password, unsigned long cookie) {
 	if(strstr(rpath, "secret") != NULL) {
 		unsigned long long x2 = reqseed * 6364136223846793005ULL + 1;
 		x2 >>= 33;
-
 		if(password == NULL) return 1;
 		if(cookie != x2) return 1;
 		return check_password(password);
