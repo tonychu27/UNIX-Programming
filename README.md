@@ -15,5 +15,5 @@
 | Homework | Name |
 | :--- | :--- |
 | HW1 | System Call Hook and Logging - Zpoline |
-
+| HW2 | Simple Instruction Level Debugger |
 
