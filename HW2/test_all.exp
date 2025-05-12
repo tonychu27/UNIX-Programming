@@ -1,0 +1,25 @@
+#!/usr/bin/expect -f
+
+puts "Testing Example 1-1:"
+puts ""
+
+spawn ./sdb
+
+expect "(sdb) "
+send "si\r"
+
+expect "(sdb) "
+send "load ./hello\r"
+
+expect "(sdb) "
+send "si\r"
+
+expect "(sdb) "
+send "si\r"
+
+expect "(sdb) "
+send "cont\r"
+
+expect "(sdb) "
+send "quit\r"
+puts ""
