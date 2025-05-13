@@ -7,19 +7,83 @@ spawn ./sdb
 
 expect "(sdb) "
 send "si\r"
-
 expect "(sdb) "
 send "load ./hello\r"
-
 expect "(sdb) "
 send "si\r"
-
 expect "(sdb) "
 send "si\r"
-
 expect "(sdb) "
 send "cont\r"
-
 expect "(sdb) "
 send "quit\r"
 puts ""
+puts ""
+
+puts "Testing Example 1-2:"
+puts ""
+
+spawn ./sdb ./hola
+expect "(sdb) "
+send "si\r"
+expect "(sdb) "
+send "si\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "quit\r"
+puts ""
+puts ""
+
+puts "Testing Example 2:"
+puts ""
+
+spawn ./sdb ./hello
+
+expect "(sdb) "
+send "break 0x401626\r"
+expect "(sdb) "
+send "breakrva 17e6\r"
+expect "(sdb) "
+send "info break\r"
+expect "(sdb) "
+send "si\r"
+expect "(sdb) "
+send "si\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "info reg\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "quit\r"
+puts ""
+puts ""
+
+puts "Testing Example 4:"
+puts ""
+
+spawn ./sdb ./hello
+
+expect "(sdb) "
+send "break 0x40179F\r"
+expect "(sdb) "
+send "breakrva 4017B4\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "syscall\r"
+expect "(sdb) "
+send "syscall\r"
+expect "(sdb) "
+send "syscall\r"
+expect "(sdb) "
+send "syscall\r"
+expect "(sdb) "
+send "syscall\r"
+expect "(sdb) "
+send "quit\r"
+puts ""
+puts ""
+
