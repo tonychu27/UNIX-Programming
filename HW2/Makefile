@@ -1,5 +1,5 @@
 CC=g++
-CFLAGS=-g -Wall 
+CFLAGS=-g -Wall
 TARGET=sdb
 
 $(TARGET): main.cpp

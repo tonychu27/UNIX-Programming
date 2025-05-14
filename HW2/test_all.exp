@@ -62,7 +62,7 @@ puts ""
 puts ""
 
 
-puts "Testing Example 3:
+puts "Testing Example 3:"
 puts ""
 
 spawn ./sdb ./rana
@@ -119,3 +119,5 @@ send "quit\r"
 puts ""
 puts ""
 
+puts "Testing Example Extract:"
+puts ""
