@@ -38,20 +38,6 @@ static bool entering = true;
 
 vector<Breakpoint> breakpoints;
 
-void set_breakpoint(uintptr_t addr) {
-
-    long data = ptrace(PTRACE_PEEKTEXT, child_pid, (void*)addr, nullptr);
-    
-    Breakpoint bp = Breakpoint(addr, data);
-    breakpoints.push_back(bp);
-    
-    long int3 = (data & ~0xFF) | 0xCC;
-
-    if (ptrace(PTRACE_POKETEXT, child_pid, (void*)addr, (void*)int3) < 0) errquit("ptrace(POKETEXT)");
-
-    if(!non_static_jmp) printf("** set a breakpoint at 0x%lx.\n", addr);
-}
-
 void disassemble(pid_t pid, uintptr_t rip) {
     constexpr int INSN_BUF_SIZE = 64;
     uint8_t code[INSN_BUF_SIZE];
@@ -104,6 +90,31 @@ void reset_breakpoint() {
     }
 }
 
+void set_breakpoint(uintptr_t addr) {
+    errno = 0;
+    long data = ptrace(PTRACE_PEEKTEXT, child_pid, (void*)addr, nullptr);
+    if (data == -1 && errno != 0) {
+        printf("** the target address is not valid.\n");
+        return;
+    }
+
+    for (auto& bp : breakpoints) {
+        if (bp.addr == addr) return;
+    }
+
+    Breakpoint bp = Breakpoint(addr, data);
+    breakpoints.push_back(bp);
+
+    long int3 = (data & ~0xFF) | 0xCC;
+    if (ptrace(PTRACE_POKETEXT, child_pid, (void*)addr, (void*)int3) < 0) {
+        printf("** the target address is not valid.");
+        breakpoints.pop_back();
+        return;
+    }
+
+    if (!non_static_jmp) printf("** set a breakpoint at 0x%lx.\n", addr);
+}
+
 void set_breakpoint() {
     for (size_t i = 0; i < breakpoints.size(); i++) {
         long int3 = (breakpoints[i].data & ~0xFF) | 0xCC;
@@ -121,6 +132,44 @@ bool hit_breakpoint(uintptr_t rip, long &data) {
     }
 
     return false;
+}
+
+void delete_breakpoint(int index) {
+    if(index < 0 || index >= (int)breakpoints.size()) {
+        printf("** breakpoint %d does not exist.\n", index);
+        return;
+    }
+
+    if (ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[index].addr, (void*)breakpoints[index].data) < 0) errquit("ptrace(POKETEXT)");
+
+    breakpoints.erase(breakpoints.begin() + index);
+    printf("** delete breakpoint %d.\n", index);
+}
+
+void list_breakpoints() {
+    printf("Num     Address\n");
+    for(size_t i = 0; i < breakpoints.size(); i++)
+        printf("%-6ld  0x%lx\n", i, breakpoints[i].addr);
+}
+
+uintptr_t parse_address(const char *str) {
+    uintptr_t addr;
+    if(strncmp(str, "0x", 2) == 0) sscanf(str, "%lx", &addr);
+    else sscanf(str, "%lx", &addr);
+
+    return addr;
+}
+
+void list_registers() {
+    struct user_regs_struct regs;
+    if(ptrace(PTRACE_GETREGS, child_pid, nullptr, &regs) < 0) errquit("ptrace(GETREGS)");
+
+    printf("$rax 0x%016llx    $rbx 0x%016llx    $rcx 0x%016llx\n", regs.rax, regs.rbx, regs.rcx);
+    printf("$rdx 0x%016llx    $rsi 0x%016llx    $rdi 0x%016llx\n", regs.rdx, regs.rsi, regs.rdi);
+    printf("$rbp 0x%016llx    $rsp 0x%016llx    $r8  0x%016llx\n", regs.rbp, regs.rsp, regs.r8);
+    printf("$r9  0x%016llx    $r10 0x%016llx    $r11 0x%016llx\n", regs.r9, regs.r10, regs.r11);
+    printf("$r12 0x%016llx    $r13 0x%016llx    $r14 0x%016llx\n", regs.r12, regs.r13, regs.r14);
+    printf("$r15 0x%016llx    $rip 0x%016llx    $eflags 0x%016llx\n", regs.r15, regs.rip, regs.eflags);
 }
 
 void step_instruction() {
@@ -181,42 +230,54 @@ void continue_execution() {
     }
 }
 
-void delete_breakpoint(int index) {
-    if(index < 0 || index >= (int)breakpoints.size()) {
-        printf("** breakpoint %d does not exist.\n", index);
+void patch_memory(uintptr_t addr, vector<uint8_t>& bytes) {
+
+}
+
+void trace_syscall() {
+    int status;
+    ptrace(PTRACE_SYSCALL, child_pid, nullptr, nullptr);
+    waitpid(child_pid, &status, 0);
+
+    if (WIFSTOPPED(status)) {
+        struct user_regs_struct regs;
+        if (ptrace(PTRACE_GETREGS, child_pid, nullptr, &regs) < 0) errquit("ptrace(GETREGS)");
+
+        uintptr_t rip = regs.rip - 1;
+
+        long bp_data;
+        bool hit = hit_breakpoint(rip, bp_data);
+        if(hit) {
+            printf("** hit a breakpoint at 0x%lx.\n", rip);
+
+            long data = ptrace(PTRACE_PEEKDATA, child_pid, rip, NULL);
+            long int3 = (data & ~0xFF) | bp_data;
+            ptrace(PTRACE_POKEDATA, child_pid, rip, int3);
+
+            regs.rip = rip;
+            ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);
+            ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
+            waitpid(child_pid, NULL, 0);
+
+            disassemble(child_pid, rip);
+            return;
+        }
+
+        if (entering) {
+            printf("** enter a syscall(%lld) at 0x%llx.\n", regs.orig_rax, regs.rip - 2);
+            disassemble(child_pid, regs.rip - 2);
+            entering = false;
+        } 
+        else {
+            printf("** leave a syscall(%lld) = %lld at 0x%llx.\n", regs.orig_rax, regs.rax, regs.rip - 2);
+            disassemble(child_pid, regs.rip - 2);
+            entering = true;
+        }
+    } 
+    else if (WIFEXITED(status)) {
+        printf("** the target program terminated.\n");
         return;
     }
-
-    if (ptrace(PTRACE_POKETEXT, child_pid, (void*)breakpoints[index].addr, (void*)breakpoints[index].data) < 0) errquit("ptrace(POKETEXT)");
-
-    breakpoints.erase(breakpoints.begin() + index);
-    printf("** delete breakpoint %d.\n", index);
-}
-
-void list_registers() {
-    struct user_regs_struct regs;
-    if(ptrace(PTRACE_GETREGS, child_pid, nullptr, &regs) < 0) errquit("ptrace(GETREGS)");
-
-    printf("$rax 0x%016llx    $rbx 0x%016llx    $rcx 0x%016llx\n", regs.rax, regs.rbx, regs.rcx);
-    printf("$rdx 0x%016llx    $rsi 0x%016llx    $rdi 0x%016llx\n", regs.rdx, regs.rsi, regs.rdi);
-    printf("$rbp 0x%016llx    $rsp 0x%016llx    $r8  0x%016llx\n", regs.rbp, regs.rsp, regs.r8);
-    printf("$r9  0x%016llx    $r10 0x%016llx    $r11 0x%016llx\n", regs.r9, regs.r10, regs.r11);
-    printf("$r12 0x%016llx    $r13 0x%016llx    $r14 0x%016llx\n", regs.r12, regs.r13, regs.r14);
-    printf("$r15 0x%016llx    $rip 0x%016llx    $eflags 0x%016llx\n", regs.r15, regs.rip, regs.eflags);
-}
-
-void list_breakpoints() {
-    printf("Num     Address\n");
-    for(size_t i = 0; i < breakpoints.size(); i++)
-        printf("%-6ld  0x%lx\n", i, breakpoints[i].addr);
-}
-
-uintptr_t parse_address(const char *str) {
-    uintptr_t addr;
-    if(strncmp(str, "0x", 2) == 0) sscanf(str, "%lx", &addr);
-    else sscanf(str, "%lx", &addr);
-
-    return addr;
 }
 
 void load_program(const char* file_path) {
@@ -289,60 +350,6 @@ void load_program(const char* file_path) {
 
 }
 
-void trace_syscall() {
-    int status;
-    ptrace(PTRACE_SYSCALL, child_pid, NULL, NULL);
-    waitpid(child_pid, &status, 0);
-
-    if (WIFSTOPPED(status)) {
-        struct user_regs_struct regs;
-        if (ptrace(PTRACE_GETREGS, child_pid, nullptr, &regs) < 0)
-            errquit("ptrace(GETREGS)");
-
-        uintptr_t rip = regs.rip - 1;
-
-        for (size_t j = 0; j < breakpoints.size(); j++) {
-            if (breakpoints[j].addr == rip) {
-                printf("** hit a breakpoint at 0x%lx.\n", rip);
-
-                long data = ptrace(PTRACE_PEEKDATA, child_pid, rip, NULL);
-                ptrace(PTRACE_POKEDATA, child_pid, rip, (data & ~0xff) | breakpoints[j].data);
-
-                regs.rip = rip;
-                ptrace(PTRACE_SETREGS, child_pid, NULL, &regs);
-                ptrace(PTRACE_SINGLESTEP, child_pid, NULL, NULL);
-                waitpid(child_pid, NULL, 0);
-
-                data = ptrace(PTRACE_PEEKDATA, child_pid, rip, NULL);
-                breakpoints[j].data = data & 0xff;
-                ptrace(PTRACE_POKEDATA, child_pid, rip, (data & ~0xff) | 0xcc);
-
-                disassemble(child_pid, rip + 1);
-                return;
-            }
-        }
-
-        if (regs.orig_rax > 300) {
-            printf("** hit an unknown syscall-like instruction at 0x%llx.\n", regs.rip - 1);
-            disassemble(child_pid, regs.rip - 1);
-        } 
-        else if (entering) {
-            printf("** enter a syscall(%lld) at 0x%llx.\n", regs.orig_rax, regs.rip - 2);
-            disassemble(child_pid, regs.rip - 2);
-            entering = false;
-        } 
-        else {
-            printf("** leave a syscall(%lld) = %lld at 0x%llx.\n", regs.orig_rax, regs.rax, regs.rip - 2);
-            disassemble(child_pid, regs.rip - 2);
-            entering = true;
-        }
-    } 
-    else if (WIFEXITED(status)) {
-        printf("** the target program terminated.\n");
-        return;
-    }
-}
-
 void handler(char* cmd) {
     if(!strncmp(cmd, "q", 1) || !strcmp(cmd, "exit\n")) {
         puts("Thanks for using our debugger. We hope you have a nice day!");
@@ -382,11 +389,25 @@ void handler(char* cmd) {
         set_breakpoint(addr);
     }
     else if(!strncmp(cmd, "patch", 5)) {
-        puts("I haven't implement... It still has some bugs");
-        // istringstream iss(cmd + 6);
-        // string addr_str, hex_str;
-        // if(iss >> addr_str >> hex_str) patch_memory(addr_str, hex_str);
-        // else puts("** usage: patch <hex address> <hex string>");
+        istringstream iss(cmd + 6);
+        string addr_str, hex_str;
+        if(iss >> addr_str >> hex_str) {
+            if(hex_str.length() >= 2048 || hex_str.length() % 2) {
+                puts("** the target address is not valid.");
+                return;
+            }
+
+            uintptr_t addr = stoul(addr_str, nullptr, 16);
+            vector<uint8_t> bytes;
+            for (size_t i = 0; i < hex_str.length(); i += 2) {
+                string byte_str = hex_str.substr(i, 2);
+                uint8_t byte = static_cast<uint8_t>(stoul(byte_str, nullptr, 16));
+                bytes.push_back(byte);
+            }
+
+            patch_memory(addr, bytes);
+        }
+        else puts("** usage: patch <hex address> <hex string>");
     }
     else puts("Unknown Command....");
     

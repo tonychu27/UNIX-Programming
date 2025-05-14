@@ -61,6 +61,38 @@ send "quit\r"
 puts ""
 puts ""
 
+
+puts "Testing Example 3:
+puts ""
+
+spawn ./sdb ./rana
+
+expect "(sdb) "
+send "break 401798\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "patch 40179e 7f\r"
+expect "(sdb) "
+send "info break\r"
+expect "(sdb) "
+send "delete 0\r"
+expect "(sdb) "
+send "patch deadbeef 1337\r"
+expect "(sdb) "
+send "break deadbeef\r"
+expect "(sdb) "
+send "breakrva deadbeef\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "quit\r"
+puts ""
+puts ""
+
+
 puts "Testing Example 4:"
 puts ""
 
@@ -69,7 +101,7 @@ spawn ./sdb ./hello
 expect "(sdb) "
 send "break 0x40179F\r"
 expect "(sdb) "
-send "breakrva 4017B4\r"
+send "break 4017B4\r"
 expect "(sdb) "
 send "cont\r"
 expect "(sdb) "
