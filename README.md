@@ -11,6 +11,7 @@
 | Lab3 | Gotoku - GOT Hijacking |
 | Lab4 | Assembly and setjmp |
 | Lab5 | Let’s Race Together! |
+| Lab6 | Buffer Overflow & Shellcoding Challenges |
 
 | Homework | Name |
 | :--- | :--- |
