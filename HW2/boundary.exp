@@ -1,0 +1,27 @@
+#!/usr/bin/expect -f
+
+puts "Testing Extra Example 2:"
+puts ""
+
+spawn ./sdb ./anon
+
+expect "(sdb) "
+send "break 401828\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "si\r"
+expect "(sdb) "
+send "break 0x700000000ffa\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "si\r"
+expect "(sdb) "
+send "si\r"
+expect "(sdb) "
+send "si\r"
+expect "(sdb) "
+send "cont\r"
+expect "(sdb) "
+send "quit\r"
